@@ -55,17 +55,23 @@ if ($currentHour -lt 12) {
         while ($uri) {
             $resp = Invoke-MgGraphRequest -Method GET -Uri $uri
             foreach ($t in $resp.value) {
-                # Chỉ lấy task có due date ĐÚNG BẰNG hôm nay theo giờ địa phương
-                # (giống mục "Today" trong app To Do). Bỏ qua task không có due date,
-                # và bỏ qua task quá hạn/tương lai.
-                $include = $false
+                # Lấy task có due date HÔM NAY hoặc ĐÃ QUÁ HẠN (đặt lịch trước đó nhưng chưa làm).
+                # Bỏ qua task không có due date, và bỏ qua task có hạn trong tương lai.
                 $dueDate = Convert-GraphDueDate $t.dueDateTime
-                if ($dueDate -and $dueDate -eq $todayDate) { $include = $true }
-                if ($include) { $tasks += $t.title }
+                if ($dueDate -and $dueDate -le $todayDate) {
+                    $tasks += [PSCustomObject]@{
+                        Title     = $t.title
+                        DueDate   = $dueDate
+                        IsOverdue = ($dueDate -lt $todayDate)
+                    }
+                }
             }
             $uri = $resp.'@odata.nextLink'
         }
     }
+
+    # Task hôm nay hiện trước, task quá hạn xếp theo hạn cũ nhất lên đầu
+    $tasks = $tasks | Sort-Object IsOverdue, DueDate
 
     $hasTasks = $tasks.Count -gt 0
 
@@ -100,9 +106,10 @@ if ($currentHour -lt 12) {
         $colorGray      = [System.Drawing.Color]::FromArgb(140, 140, 148)   # xám nhạt (subtext)
         $colorDivider   = [System.Drawing.Color]::FromArgb(232, 232, 236)   # xám rất nhạt (đường kẻ)
         $colorAccent    = [System.Drawing.Color]::FromArgb(0, 120, 212)     # xanh accent (Microsoft blue)
+        $colorOverdue   = [System.Drawing.Color]::FromArgb(196, 90, 78)     # đỏ gạch trầm (cho task quá hạn)
 
         $formW = 420
-        $formH = 360
+        $formH = 400
 
         $form = New-Object System.Windows.Forms.Form
         $form.Text = "Nhắc việc buổi sáng"
@@ -153,8 +160,9 @@ if ($currentHour -lt 12) {
         $lblBig.Font = New-Object System.Drawing.Font("Segoe UI Light", 42, [System.Drawing.FontStyle]::Regular)
         $lblBig.ForeColor = $colorInk
         $lblBig.BackColor = [System.Drawing.Color]::Transparent
-        $lblBig.AutoSize = $true
-        $lblBig.Location = New-Object System.Drawing.Point(26, 50)
+        $lblBig.AutoSize = $false
+        $lblBig.Size = New-Object System.Drawing.Size(300, 80)
+        $lblBig.Location = New-Object System.Drawing.Point(24, 46)
         $form.Controls.Add($lblBig)
 
         $lblSub = New-Object System.Windows.Forms.Label
@@ -164,57 +172,108 @@ if ($currentHour -lt 12) {
         $lblSub.BackColor = [System.Drawing.Color]::Transparent
         $lblSub.AutoSize = $false
         $lblSub.Size = New-Object System.Drawing.Size(300, 24)
-        $lblSub.Location = New-Object System.Drawing.Point(30, 128)
+        $lblSub.Location = New-Object System.Drawing.Point(30, 156)
         $form.Controls.Add($lblSub)
 
         # --- Đường kẻ phân cách mỏng ---
         $divider1 = New-Object System.Windows.Forms.Panel
         $divider1.Size = New-Object System.Drawing.Size(($formW - 56), 1)
-        $divider1.Location = New-Object System.Drawing.Point(28, 160)
+        $divider1.Location = New-Object System.Drawing.Point(28, 190)
         $divider1.BackColor = $colorDivider
         $form.Controls.Add($divider1)
 
-        # --- Danh sách task: mỗi dòng có số thứ tự + tên, cách nhau bằng đường kẻ mảnh ---
+        # --- Danh sách task: tách nhóm "HÔM NAY" và "QUÁ HẠN" (kèm ngày hạn cũ) ---
         $listPanel = New-Object System.Windows.Forms.Panel
-        $listPanel.Size = New-Object System.Drawing.Size(($formW - 56), 100)
-        $listPanel.Location = New-Object System.Drawing.Point(28, 176)
+        $listPanel.Size = New-Object System.Drawing.Size(($formW - 56), 130)
+        $listPanel.Location = New-Object System.Drawing.Point(28, 206)
         $listPanel.AutoScroll = $true
         $listPanel.BackColor = $colorBg
         $form.Controls.Add($listPanel)
 
-        $rowHeight = 34
-        $rowY = 0
+        $todayTasks   = @($tasks | Where-Object { -not $_.IsOverdue })
+        $overdueTasks = @($tasks | Where-Object { $_.IsOverdue })
+
+        $script:rowY = 0
         $idx = 1
-        foreach ($t in $tasks) {
-            $lblIdx = New-Object System.Windows.Forms.Label
-            $lblIdx.Text = "{0:D2}" -f $idx
-            $lblIdx.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-            $lblIdx.ForeColor = $colorGray
-            $lblIdx.BackColor = [System.Drawing.Color]::Transparent
-            $lblIdx.Size = New-Object System.Drawing.Size(28, 22)
-            $lblIdx.Location = New-Object System.Drawing.Point(0, $rowY)
-            $listPanel.Controls.Add($lblIdx)
 
-            $lblTask = New-Object System.Windows.Forms.Label
-            $lblTask.Text = $t
-            $lblTask.Font = New-Object System.Drawing.Font("Segoe UI", 10.5)
-            $lblTask.ForeColor = $colorInk
-            $lblTask.BackColor = [System.Drawing.Color]::Transparent
-            $lblTask.AutoSize = $false
-            $lblTask.Size = New-Object System.Drawing.Size(300, 22)
-            $lblTask.Location = New-Object System.Drawing.Point(32, $rowY)
-            $listPanel.Controls.Add($lblTask)
+        function Add-SectionHeader {
+            param($Text, $Color)
+            $lbl = New-Object System.Windows.Forms.Label
+            $lbl.Text = $Text
+            $lbl.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 8.5)
+            $lbl.ForeColor = $Color
+            $lbl.BackColor = [System.Drawing.Color]::Transparent
+            $lbl.AutoSize = $false
+            $lbl.Size = New-Object System.Drawing.Size(300, 18)
+            $lbl.Location = New-Object System.Drawing.Point(0, $script:rowY)
+            $listPanel.Controls.Add($lbl)
+            $script:rowY += 24
+        }
 
-            if ($idx -lt $tasks.Count) {
-                $rowDivider = New-Object System.Windows.Forms.Panel
-                $rowDivider.Size = New-Object System.Drawing.Size(($formW - 56), 1)
-                $rowDivider.Location = New-Object System.Drawing.Point(0, ($rowY + 26))
-                $rowDivider.BackColor = $colorDivider
-                $listPanel.Controls.Add($rowDivider)
+        if ($todayTasks.Count -gt 0) {
+            Add-SectionHeader -Text "HÔM NAY" -Color $colorAccent
+            foreach ($t in $todayTasks) {
+                $lblIdx = New-Object System.Windows.Forms.Label
+                $lblIdx.Text = "{0:D2}" -f $idx
+                $lblIdx.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+                $lblIdx.ForeColor = $colorGray
+                $lblIdx.BackColor = [System.Drawing.Color]::Transparent
+                $lblIdx.Size = New-Object System.Drawing.Size(28, 22)
+                $lblIdx.Location = New-Object System.Drawing.Point(0, $script:rowY)
+                $listPanel.Controls.Add($lblIdx)
+
+                $lblTask = New-Object System.Windows.Forms.Label
+                $lblTask.Text = $t.Title
+                $lblTask.Font = New-Object System.Drawing.Font("Segoe UI", 10.5)
+                $lblTask.ForeColor = $colorInk
+                $lblTask.BackColor = [System.Drawing.Color]::Transparent
+                $lblTask.AutoSize = $false
+                $lblTask.Size = New-Object System.Drawing.Size(300, 22)
+                $lblTask.Location = New-Object System.Drawing.Point(32, $script:rowY)
+                $listPanel.Controls.Add($lblTask)
+
+                $script:rowY += 30
+                $idx++
             }
+        }
 
-            $rowY += $rowHeight
-            $idx++
+        if ($overdueTasks.Count -gt 0) {
+            $script:rowY += 8
+            Add-SectionHeader -Text "QUÁ HẠN" -Color $colorOverdue
+            foreach ($t in $overdueTasks) {
+                $lblIdx = New-Object System.Windows.Forms.Label
+                $lblIdx.Text = "{0:D2}" -f $idx
+                $lblIdx.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+                $lblIdx.ForeColor = $colorGray
+                $lblIdx.BackColor = [System.Drawing.Color]::Transparent
+                $lblIdx.Size = New-Object System.Drawing.Size(28, 22)
+                $lblIdx.Location = New-Object System.Drawing.Point(0, $script:rowY)
+                $listPanel.Controls.Add($lblIdx)
+
+                $lblTask = New-Object System.Windows.Forms.Label
+                $lblTask.Text = $t.Title
+                $lblTask.Font = New-Object System.Drawing.Font("Segoe UI", 10.5)
+                $lblTask.ForeColor = $colorInk
+                $lblTask.BackColor = [System.Drawing.Color]::Transparent
+                $lblTask.AutoSize = $false
+                $lblTask.Size = New-Object System.Drawing.Size(300, 20)
+                $lblTask.Location = New-Object System.Drawing.Point(32, $script:rowY)
+                $listPanel.Controls.Add($lblTask)
+
+                $lblDue = New-Object System.Windows.Forms.Label
+                $lblDue.Text = "Quá hạn từ " + $t.DueDate.ToString("dd/MM/yyyy")
+                $lblDue.Font = New-Object System.Drawing.Font("Segoe UI", 8.5)
+                $lblDue.ForeColor = $colorOverdue
+                $lblDue.BackColor = [System.Drawing.Color]::Transparent
+                $lblDue.AutoSize = $false
+                $lblDue.Size = New-Object System.Drawing.Size(300, 16)
+                $dueY = $script:rowY + 20
+                $lblDue.Location = New-Object System.Drawing.Point(32, $dueY)
+                $listPanel.Controls.Add($lblDue)
+
+                $script:rowY += 44
+                $idx++
+            }
         }
 
         # --- Nút "Mở To Do" (mở app Microsoft To Do thật trên máy, không phải web) ---

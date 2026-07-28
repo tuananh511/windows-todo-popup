@@ -13,7 +13,7 @@ AM Task Reminder quét danh sách task trong Microsoft To Do của bạn mỗi b
 ## Features
  
 - **Lấy task thật** từ Microsoft To Do qua Microsoft Graph API (không phải dữ liệu giả lập).
-- **Lọc thông minh:** chỉ hiện task chưa hoàn thành và có hạn đúng hôm nay (theo giờ địa phương, đã xử lý đúng timezone).
+- **Lọc thông minh:** hiện task chưa hoàn thành có hạn hôm nay hoặc đã quá hạn (theo giờ địa phương, đã xử lý đúng timezone), tự động tách riêng 2 nhóm **Hôm nay** / **Quá hạn** và ghi rõ ngày đến hạn ban đầu của từng task quá hạn.
 - **Cơ chế chạy bù:** nếu mở máy muộn (9h-10h sáng), script vẫn quét và bắn thông báo bù ngay khi vào Windows.
 - **Chống phiền nhiễu:** mỗi ngày chỉ hiện thông báo đúng 1 lần, nhờ ghi log tạm tại `%TEMP%\todo_am_check.log`.
 - **Popup phải tự tay tắt:** cửa sổ đứng yên, không tự động biến mất — phải bấm "Đã xem" hoặc "Mở To Do" mới đóng.

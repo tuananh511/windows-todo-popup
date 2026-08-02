@@ -18,13 +18,43 @@ if ($currentHour -lt 12) {
     # =====================================================================
     # 2. LẤY TASK THẬT TỪ MICROSOFT TO DO (qua Microsoft Graph)
     # =====================================================================
-    Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+    $debugLog = "$env:TEMP\todo_am_debug.log"
+    function Write-DebugLog($msg) {
+        "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))  $msg" | Out-File -Append -FilePath $debugLog
+    }
 
-    # Lần đầu sẽ hiện trình duyệt để đăng nhập + xin quyền.
-    # Các lần sau sẽ tự đăng nhập ngầm nhờ token đã lưu cache.
-    Connect-MgGraph -Scopes "Tasks.Read" -NoWelcome -ErrorAction Stop
+    try {
+        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+        Write-DebugLog "Module version: $((Get-Module Microsoft.Graph.Authentication).Version)"
 
-    $lists = (Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/me/todo/lists").value
+        # Thử kết nối tối đa 3 lần, cách nhau 15s (phòng lúc mới mở máy mạng/trình duyệt chưa sẵn sàng).
+        $connected = $false
+        for ($i = 1; $i -le 3 -and -not $connected; $i++) {
+            try {
+                Connect-MgGraph -Scopes "Tasks.Read" -NoWelcome -ErrorAction Stop
+                $connected = $true
+                Write-DebugLog "Connect-MgGraph OK (lan $i). Account: $((Get-MgContext).Account)"
+            } catch {
+                Write-DebugLog "Connect-MgGraph FAILED (lan $i): $($_.Exception.Message)"
+                if ($i -lt 3) { Start-Sleep -Seconds 15 }
+            }
+        }
+        if (-not $connected) {
+            Write-DebugLog "Bo qua: khong the dang nhap Graph sau 3 lan thu. Se thu lai vao lan mo may/chay task tiep theo."
+            Exit
+        }
+    } catch {
+        Write-DebugLog "Loi khi import module: $($_.Exception.Message)"
+        Exit
+    }
+
+    try {
+        $lists = (Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/me/todo/lists").value
+        Write-DebugLog "So list lay duoc: $($lists.Count)"
+    } catch {
+        Write-DebugLog "Loi khi lay danh sach list: $($_.Exception.Message)"
+        Exit
+    }
 
     # Hàm quy đổi due date của Graph API (theo UTC hoặc timezone ghi trong field) sang giờ địa phương thật sự
     function Convert-GraphDueDate($dueDateTime) {
@@ -74,6 +104,7 @@ if ($currentHour -lt 12) {
     $tasks = $tasks | Sort-Object IsOverdue, DueDate
 
     $hasTasks = $tasks.Count -gt 0
+    Write-DebugLog "Tong task hop le (hom nay + qua han): $($tasks.Count)"
 
     if ($hasTasks) {
 

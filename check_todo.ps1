@@ -80,28 +80,37 @@ if ($currentHour -lt 12) {
     foreach ($list in $lists) {
         $encodedFilter = [uri]::EscapeDataString("status ne 'completed'")
         $uri = "https://graph.microsoft.com/v1.0/me/todo/lists/$($list.id)/tasks?`$filter=$encodedFilter&`$top=100"
+        $rawCountThisList = 0
 
-        # Lặp qua TẤT CẢ các trang kết quả (Graph API trả về theo trang, không trả hết 1 lần)
-        while ($uri) {
-            $resp = Invoke-MgGraphRequest -Method GET -Uri $uri
-            foreach ($t in $resp.value) {
-                # Lấy task có due date HÔM NAY hoặc ĐÃ QUÁ HẠN (đặt lịch trước đó nhưng chưa làm).
-                # Bỏ qua task không có due date, và bỏ qua task có hạn trong tương lai.
-                $dueDate = Convert-GraphDueDate $t.dueDateTime
-                if ($dueDate -and $dueDate -le $todayDate) {
-                    $tasks += [PSCustomObject]@{
-                        Title     = $t.title
-                        DueDate   = $dueDate
-                        IsOverdue = ($dueDate -lt $todayDate)
+        try {
+            # Lặp qua TẤT CẢ các trang kết quả (Graph API trả về theo trang, không trả hết 1 lần)
+            while ($uri) {
+                $resp = Invoke-MgGraphRequest -Method GET -Uri $uri -ErrorAction Stop
+                $rawCountThisList += $resp.value.Count
+                foreach ($t in $resp.value) {
+                    # Lấy task có due date HÔM NAY hoặc ĐÃ QUÁ HẠN (đặt lịch trước đó nhưng chưa làm).
+                    # Bỏ qua task không có due date, và bỏ qua task có hạn trong tương lai.
+                    $dueDate = Convert-GraphDueDate $t.dueDateTime
+                    if ($dueDate -and $dueDate -le $todayDate) {
+                        $tasks += [PSCustomObject]@{
+                            Title     = $t.title
+                            DueDate   = $dueDate
+                            IsOverdue = ($dueDate -lt $todayDate)
+                        }
                     }
                 }
+                $uri = $resp.'@odata.nextLink'
             }
-            $uri = $resp.'@odata.nextLink'
+            Write-DebugLog "List '$($list.displayName)': $rawCountThisList task chua completed (truoc khi loc due date)"
+        } catch {
+            Write-DebugLog "Loi khi fetch task cho list '$($list.displayName)': $($_.Exception.Message)"
         }
     }
 
     # Task hôm nay hiện trước, task quá hạn xếp theo hạn cũ nhất lên đầu
-    $tasks = $tasks | Sort-Object IsOverdue, DueDate
+    # Bọc @() để tránh bug PowerShell: pipe mảng rỗng qua Sort-Object sẽ trả về $null thay vì mảng rỗng,
+    # khiến $tasks.Count phía dưới bị sai/rỗng và popup không bao giờ hiện dù có task.
+    $tasks = @($tasks | Sort-Object IsOverdue, DueDate)
 
     $hasTasks = $tasks.Count -gt 0
     Write-DebugLog "Tong task hop le (hom nay + qua han): $($tasks.Count)"

@@ -31,7 +31,7 @@ if ($currentHour -lt 12) {
         $connected = $false
         for ($i = 1; $i -le 3 -and -not $connected; $i++) {
             try {
-                Connect-MgGraph -Scopes "Tasks.Read" -NoWelcome -ErrorAction Stop
+                Connect-MgGraph -Scopes "Tasks.Read" -NoWelcome -UseDeviceCode -ErrorAction Stop
                 $connected = $true
                 Write-DebugLog "Connect-MgGraph OK (lan $i). Account: $((Get-MgContext).Account)"
             } catch {

@@ -1,0 +1,16 @@
+# Nhật ký / dữ liệu tạm
+*.log
+last_shown.txt
+
+# Đóng gói cục bộ
+dist/
+*.zip
+
+# Shortcut tạo khi thử cài đặt
+*.lnk
+
+# Hệ điều hành / editor
+Thumbs.db
+Desktop.ini
+.vs/
+.vscode/

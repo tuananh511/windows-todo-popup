@@ -1,0 +1,9 @@
+{
+  "RunUntilHour": 12,
+  "ShowOverdue": true,
+  "ExcludeLists": [],
+  "SnoozeMinutes": 60,
+  "AccentColor": "#0078D4",
+  "OverdueColor": "#C45A4E",
+  "InkColor": "#111114"
+}

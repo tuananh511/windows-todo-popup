@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Kiem tra BOM UTF-8 cua file ps1 va ASCII cua file bat
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($f in Get-ChildItem -Recurse -File -Filter *.ps1) {
+            $b = [System.IO.File]::ReadAllBytes($f.FullName)
+            if (-not ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF)) {
+              Write-Host "::error file=$($f.Name)::Thieu BOM UTF-8 (Windows PowerShell 5.1 se doc sai tieng Viet). Luu lai dang UTF-8 with BOM."
+              $failed = $true
+            }
+          }
+          foreach ($f in Get-ChildItem -Recurse -File -Filter *.bat) {
+            $b = [System.IO.File]::ReadAllBytes($f.FullName)
+            foreach ($x in $b) {
+              if ($x -gt 127) {
+                Write-Host "::error file=$($f.Name)::File .bat chi duoc chua ky tu ASCII (tranh loi font tieng Viet)."
+                $failed = $true
+                break
+              }
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Kiem tra cu phap bang Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $failed = $false
+          foreach ($f in Get-ChildItem -Recurse -File -Filter *.ps1) {
+            $tokens = $null
+            $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tokens, [ref]$errs)
+            foreach ($e in $errs) {
+              Write-Host "::error file=$($f.Name),line=$($e.Extent.StartLineNumber)::$($e.Message)"
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -ExcludeRule PSAvoidUsingWriteHost
+          $results | Format-Table RuleName, Severity, ScriptName, Line, Message -AutoSize -Wrap | Out-String -Width 250 | Write-Host
+          $errors = @($results | Where-Object { $_.Severity -eq 'Error' })
+          if ($errors.Count -gt 0) { exit 1 }

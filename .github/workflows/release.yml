@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Kiem tra tag khop file VERSION
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver="$(tr -d '\r\n ' < VERSION)"
+          if [ "$tag" != "$ver" ]; then
+            echo "::error::Tag ($tag) khac noi dung file VERSION ($ver). Sua VERSION roi tao lai tag."
+            exit 1
+          fi
+
+      - name: Dong goi WindowsTodoPopup.zip
+        run: |
+          mkdir -p dist
+          zip -j dist/WindowsTodoPopup.zip Cai-dat.bat Go-cai-dat.bat install.ps1 uninstall.ps1 check_todo.ps1 config.json VERSION README.md
+          if [ -f LICENSE ]; then zip -j dist/WindowsTodoPopup.zip LICENSE; fi
+          unzip -l dist/WindowsTodoPopup.zip
+
+      - name: Tao Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/WindowsTodoPopup.zip \
+            --title "Windows ToDo Popup $GITHUB_REF_NAME" \
+            --generate-notes
